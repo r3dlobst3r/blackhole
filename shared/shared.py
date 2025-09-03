@@ -211,7 +211,7 @@ mediaExtensions = [
     ".flv", 
     ".wpl", 
     ".img", 
-    ".iso", 
+    # ".iso", 
     ".vob", 
     ".mkv", 
     ".mk3d", 
