@@ -135,6 +135,31 @@
     python3 python_watcher.py
     ```
 
+### Uncached Downloads
+
+The blackhole system now supports **uncached downloading** for content not available in debrid service caches:
+
+- **Automatic Fallback**: When cached downloads fail, automatically processes as uncached downloads
+- **Real-time Progress**: Discord webhook integration shows download progress in real-time
+- **State Persistence**: Downloads resume automatically after system restarts
+- **Smart Organization**: Organizes uncached content by parsed title and episode structure
+
+#### Configuration
+
+Add to your `.env` file:
+```bash
+BLACKHOLE_WAIT_FOR_PROGRESS_CHANGE=720  # Timeout for download progress (seconds)
+```
+
+#### Features
+- Parallel processing with configurable limits
+- RTN-based torrent parsing for intelligent categorization  
+- Thread-safe concurrent operations
+- Comprehensive error handling and retry logic
+- Full backward compatibility with existing functionality
+
+See `UNCACHED_GUIDE.md` for detailed documentation and configuration options.
+
 ## Plex Request
 
 ### Setup
