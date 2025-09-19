@@ -7,12 +7,17 @@ import re
 import requests
 import asyncio
 import uuid
+import threading
 from datetime import datetime
 # import urllib
 from shared.discord import discordError, discordUpdate
 from shared.shared import realdebrid, torbox, blackhole, plex, checkRequiredEnvs
 from shared.arr import Arr, Radarr, Sonarr
 from shared.debrid import TorrentBase, RealDebridTorrent, RealDebridMagnet, TorboxTorrent, TorboxMagnet
+
+# Global state for uncached downloads
+shared_dict = {}
+download_lock = None
 
 _print = print
 
@@ -26,6 +31,7 @@ requiredEnvs = {
     'Blackhole fail if not cached': (blackhole['failIfNotCached'],),
     'Blackhole RD mount refresh seconds': (blackhole['rdMountRefreshSeconds'],),
     'Blackhole wait for torrent timeout': (blackhole['waitForTorrentTimeout'],),
+    'Blackhole wait for progress change': (blackhole['waitForProgressChange'],),
     'Blackhole history page size': (blackhole['historyPageSize'],)
 }
 
@@ -82,7 +88,7 @@ def getPath(isRadarr, create=False):
     finalPath = os.path.join(absoluteBaseWatchPath, blackhole['radarrPath'] if isRadarr else blackhole['sonarrPath'])
 
     if create:
-        for sub_path in ['', 'processing', 'completed']:
+        for sub_path in ['', 'processing', 'completed', 'uncached']:
             path_to_check = os.path.join(finalPath, sub_path)
             if not os.path.exists(path_to_check):
                 os.makedirs(path_to_check)
@@ -342,7 +348,9 @@ async def processFile(file: TorrentFileInfo, arr: Arr, isRadarr):
                     results = await asyncio.gather(*(processTorrent(torrent, file, arr) for torrent in torrents))
                     
                     if not any(results):
-                        await asyncio.gather(*(fail(torrent, arr, isRadarr) for torrent in torrents))
+                        # Try uncached download for the first torrent
+                        if torrents:
+                            await fail(torrents[0], arr, isRadarr, uncached=True)
                 else:
                     print("No torrent services available")
                     discordError("No services available", "No healthy accounts or services")
@@ -362,7 +370,8 @@ async def processFile(file: TorrentFileInfo, arr: Arr, isRadarr):
                             success = True
                             break
                         elif isLast:
-                            await fail(torrent, arr, isRadarr)
+                            # Try uncached download on last failure
+                            await fail(torrent, arr, isRadarr, uncached=True)
                     except Exception as e:
                         print(f"Error with {'Real-Debrid account ' + str(account['id']) if account else 'TorBox'}: {e}")
                         if isLast:
@@ -381,7 +390,7 @@ async def processFile(file: TorrentFileInfo, arr: Arr, isRadarr):
 
         discordError(f"Error processing {file.fileInfo.filenameWithoutExt}", e)
 
-async def fail(torrent: TorrentBase, arr: Arr, isRadarr):
+async def fail(torrent: TorrentBase, arr: Arr, isRadarr, uncached=False):
     _print = globals()['print']
 
     def print(*values: object):
@@ -408,28 +417,151 @@ async def fail(torrent: TorrentBase, arr: Arr, isRadarr):
         failTasks = [asyncio.to_thread(arr.failHistoryItem, item.id) for item in items]
         await asyncio.gather(*failTasks)
 
+        if uncached:
+            try:
+                # Import here to avoid circular import
+                from RTN import parse
+                
+                parsedTorrent = parse(torrent.file.fileInfo.filename)
+                torrentName = parsedTorrent.parsed_title
+                path = os.path.join(getPath(isRadarr), 'uncached', torrentName, torrent.file.fileInfo.filename)
+                
+                if not isRadarr:
+                    if len(parsedTorrent.seasons) == 1 and len(parsedTorrent.episodes) == 1:
+                        episodeNum = str(parsedTorrent.episodes[0])
+                        path = os.path.join(getPath(isRadarr), 'uncached', torrentName, episodeNum, torrent.file.fileInfo.filename)
+                    else:
+                        seasonPack = 'seasonpack'
+                        if not hasattr(parsedTorrent, 'seasons') or not parsedTorrent.seasons:
+                            print("Removing because seasons not found after parsing.")
+                            if os.path.exists(torrent.file.fileInfo.filePathProcessing):
+                                os.remove(torrent.file.fileInfo.filePathProcessing)
+                            return
+                        seasons = [str(pt) for pt in parsedTorrent.seasons]
+                        seasons = "-".join(seasons)
+                        path = os.path.join(getPath(isRadarr), 'uncached', torrentName, seasonPack, seasons, torrent.file.fileInfo.filename)
+
+                # Move to uncached folder for later processing
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                if not os.path.exists(path):
+                    shutil.move(torrent.file.fileInfo.filePathProcessing, path)
+                elif os.path.exists(torrent.file.fileInfo.filePathProcessing):
+                    os.remove(torrent.file.fileInfo.filePathProcessing)
+                print("Pushed to uncached downloader")
+                
+                # Trigger uncached download
+                await start_uncached_download(torrent, torrent.file, arr, path, shared_dict, download_lock)
+                
+            except Exception as e:
+                print(f"Error processing uncached download: {e}")
+                discordError(f"Error processing uncached download for {torrent.file.fileInfo.filenameWithoutExt}", str(e))
+
         # For season packs, trigger a new search
-        if isSeasonPack:
+        if isSeasonPack and not uncached:
             for item in items:
                 series = await asyncio.to_thread(arr.get, item.grandparentId)
                 await asyncio.to_thread(arr.automaticSearch, series, item.parentId)
 
     print(f"Failed")
     
+async def start_uncached_download(torrent, file, arr, torrent_file, shared_dict, lock):
+    """Start uncached download using the blackhole_downloader module"""
+    try:
+        from blackhole_downloader import downloader
+        await downloader(torrent, file, arr, torrent_file, shared_dict, lock)
+    except Exception as e:
+        print(f"Error in uncached download: {e}")
+        discordError(f"Error in uncached download for {file.fileInfo.filenameWithoutExt}", str(e))
+
 def getFiles(isRadarr):
     print('getFiles')
     files = (TorrentFileInfo(filename, isRadarr) for filename in os.listdir(getPath(isRadarr)) if filename not in ['processing', 'completed'])
     return [file for file in files if file.torrentInfo.isTorrentOrMagnet]
 
+async def resumeUncached(isRadarr=None):
+    """Resume processing uncached downloads"""
+    print('Processing uncached downloads')
+    try:
+        global shared_dict, download_lock
+        if download_lock is None:
+            download_lock = threading.Lock()
+            
+        radarr = Radarr()
+        sonarr = Sonarr()
+
+        paths = []
+        if isRadarr is None:
+            # Process both if not specified
+            paths = [(os.path.join(getPath(isRadarr=True), 'uncached'), radarr, True), 
+                     (os.path.join(getPath(isRadarr=False), 'uncached'), sonarr, False)]
+        else:
+            # Process only specified type
+            arr = radarr if isRadarr else sonarr
+            paths = [(os.path.join(getPath(isRadarr=isRadarr), 'uncached'), arr, isRadarr)]
+
+        futures: list[asyncio.Future] = []
+        processed_files = set()
+        
+        for path, arr, is_radarr_type in paths:
+            if not os.path.exists(path):
+                continue
+                
+            for root, dirs, _ in os.walk(path):
+                if not dirs and os.path.exists(root):
+                    if not os.listdir(root):
+                        try:
+                            os.removedirs(root)
+                        except OSError:
+                            pass
+                        continue
+                    print(f"Processing uncached files in: {root}")
+                    files = [TorrentFileInfo(filename, is_radarr_type, os.path.join(root, filename)) 
+                            for filename in os.listdir(root)]
+                    files = [file for file in files if file.torrentInfo.isTorrentOrMagnet]
+                    
+                    for file in files:
+                        if file.fileInfo.filename not in processed_files:
+                            try:
+                                # Move file to processing directory for processing
+                                shutil.copy(file.fileInfo.filePath, file.fileInfo.filePathProcessing)
+                                processed_files.add(file.fileInfo.filename)
+                                futures.append(asyncio.create_task(processFile(file, arr, is_radarr_type)))
+                            except Exception as e:
+                                print(f"Error setting up uncached file {file.fileInfo.filename}: {e}")
+                        else:
+                            try:
+                                os.remove(file.fileInfo.filePath)
+                            except OSError:
+                                pass
+
+        if futures:
+            await asyncio.gather(*futures, return_exceptions=True)
+    except Exception as e:
+        print(f"Error processing uncached downloads: {e}")
+        discordError(f"Error processing uncached", str(e))
+    print("Finished processing uncached downloads")
+
 async def on_created(isRadarr):
     print("Enter 'on_created'")
     try:
+        global shared_dict, download_lock
+        
+        # Initialize shared state
+        if download_lock is None:
+            download_lock = threading.Lock()
+        
         print('radarr/sonarr:', 'radarr' if isRadarr else 'sonarr')
 
         if isRadarr:
             arr = Radarr()
         else:
             arr = Sonarr()
+
+        # Create necessary directories
+        getPath(isRadarr, create=True)
+        
+        # Resume any uncached downloads first
+        await resumeUncached(isRadarr)
 
         futures: list[asyncio.Future] = []
         firstGo = True
