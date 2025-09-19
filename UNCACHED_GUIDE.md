@@ -14,7 +14,7 @@ This implementation adds comprehensive uncached downloading support to the black
 - **Smart Organization**: Intelligent folder structure based on parsed content
 
 ### 🔧 Technical Features
-- **RTN Integration**: Advanced torrent name parsing for proper categorization
+- **GuessIt Integration**: Advanced torrent name parsing for proper categorization
 - **Thread Safety**: Proper locking mechanisms for concurrent operations
 - **Error Handling**: Comprehensive retry logic and graceful degradation
 - **Backward Compatibility**: Existing functionality remains unchanged
@@ -69,7 +69,7 @@ Main uncached download processing module:
 ### 3. Updated `blackhole.py`
 - Added `resumeUncached()` function for restart persistence
 - Enhanced `fail()` function with uncached processing support
-- Integrated RTN parsing for intelligent categorization
+- Integrated GuessIt parsing for intelligent categorization
 - Added global state management with `shared_dict` and `download_lock`
 
 ## Usage Workflow
@@ -83,7 +83,7 @@ Main uncached download processing module:
 1. Torrent file dropped into watch folder
 2. System checks cache availability
 3. If not cached: Moves to uncached processing
-4. Parses torrent name using RTN
+4. Parses torrent name using GuessIt
 5. Organizes into appropriate uncached folder structure
 6. Submits for uncached download with progress tracking
 7. Creates symlinks when complete
@@ -196,7 +196,7 @@ The implementation is fully backward compatible:
 
 **Downloads not resuming:**
 - Check file permissions in uncached folders
-- Verify RTN parsing is working correctly
+- Verify GuessIt parsing is working correctly
 - Review logs for parsing errors
 
 ### Debug Mode
@@ -208,7 +208,7 @@ PYTHONUNBUFFERED=TRUE
 ## Dependencies
 
 New dependencies added:
-- `rank-torrent-name` - Advanced torrent name parsing
+- `guessit` - Advanced media name parsing and detection
 - Existing dependencies remain unchanged
 
 ## Security Considerations

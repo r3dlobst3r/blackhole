@@ -14,7 +14,7 @@ COPY requirements.txt ./
 
 # Install Python dependencies
 RUN grep -E "#.*($SERVICE_NAME|all)" requirements.txt | awk '{print $0}' > service_requirements.txt && \
-    pip install --no-cache-dir -r service_requirements.txt
+    pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --no-cache-dir -r service_requirements.txt
 
 # Copy the rest of the application
 COPY . .

@@ -420,26 +420,29 @@ async def fail(torrent: TorrentBase, arr: Arr, isRadarr, uncached=False):
         if uncached:
             try:
                 # Import here to avoid circular import
-                from RTN import parse
+                from guessit import guessit
                 
-                parsedTorrent = parse(torrent.file.fileInfo.filename)
-                torrentName = parsedTorrent.parsed_title
+                parsedTorrent = guessit(torrent.file.fileInfo.filename)
+                torrentName = parsedTorrent.get('title', 'Unknown')
                 path = os.path.join(getPath(isRadarr), 'uncached', torrentName, torrent.file.fileInfo.filename)
                 
                 if not isRadarr:
-                    if len(parsedTorrent.seasons) == 1 and len(parsedTorrent.episodes) == 1:
-                        episodeNum = str(parsedTorrent.episodes[0])
-                        path = os.path.join(getPath(isRadarr), 'uncached', torrentName, episodeNum, torrent.file.fileInfo.filename)
-                    else:
-                        seasonPack = 'seasonpack'
-                        if not hasattr(parsedTorrent, 'seasons') or not parsedTorrent.seasons:
-                            print("Removing because seasons not found after parsing.")
+                    # Handle TV shows
+                    if parsedTorrent.get('type') == 'episode':
+                        if 'season' in parsedTorrent and 'episode' in parsedTorrent:
+                            # Single episode
+                            episodeNum = str(parsedTorrent['episode'])
+                            path = os.path.join(getPath(isRadarr), 'uncached', torrentName, episodeNum, torrent.file.fileInfo.filename)
+                        elif 'season' in parsedTorrent:
+                            # Season pack
+                            seasonPack = 'seasonpack'
+                            season = str(parsedTorrent['season'])
+                            path = os.path.join(getPath(isRadarr), 'uncached', torrentName, seasonPack, season, torrent.file.fileInfo.filename)
+                        else:
+                            print("Removing because season/episode info not found after parsing.")
                             if os.path.exists(torrent.file.fileInfo.filePathProcessing):
                                 os.remove(torrent.file.fileInfo.filePathProcessing)
                             return
-                        seasons = [str(pt) for pt in parsedTorrent.seasons]
-                        seasons = "-".join(seasons)
-                        path = os.path.join(getPath(isRadarr), 'uncached', torrentName, seasonPack, seasons, torrent.file.fileInfo.filename)
 
                 # Move to uncached folder for later processing
                 os.makedirs(os.path.dirname(path), exist_ok=True)

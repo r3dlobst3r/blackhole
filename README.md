@@ -153,7 +153,7 @@ BLACKHOLE_WAIT_FOR_PROGRESS_CHANGE=720  # Timeout for download progress (seconds
 
 #### Features
 - Parallel processing with configurable limits
-- RTN-based torrent parsing for intelligent categorization  
+- GuessIt-based torrent parsing for intelligent categorization  
 - Thread-safe concurrent operations
 - Comprehensive error handling and retry logic
 - Full backward compatibility with existing functionality
