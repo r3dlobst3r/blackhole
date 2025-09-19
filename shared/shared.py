@@ -35,7 +35,7 @@ blackhole = {
     'failIfNotCached': env.bool('BLACKHOLE_FAIL_IF_NOT_CACHED', default=None),
     'rdMountRefreshSeconds': env.integer('BLACKHOLE_RD_MOUNT_REFRESH_SECONDS', default=None),
     'waitForTorrentTimeout': env.integer('BLACKHOLE_WAIT_FOR_TORRENT_TIMEOUT', default=None),
-    'waitForProgressChange': env.integer('BLACKHOLE_WAIT_FOR_PROGRESS_CHANGE', default=720),
+    'waitForProgressChange': env.integer('BLACKHOLE_WAIT_FOR_PROGRESS_CHANGE', default=None),
     'historyPageSize': env.integer('BLACKHOLE_HISTORY_PAGE_SIZE', default=None),
 }
 
