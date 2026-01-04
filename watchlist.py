@@ -119,7 +119,7 @@ def getWatchlistedAt(ratingKey, headers):
 
     if request.status_code != 200: return
     
-    watchlistedAt = request.json()['MediaContainer']['UserState']['watchlistedAt']
+    watchlistedAt = request.json()['MediaContainer']['UserState'][0]['watchlistedAt']
     
     return watchlistedAt
 
